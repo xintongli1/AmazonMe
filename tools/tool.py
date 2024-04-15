@@ -163,7 +163,7 @@ async def verify_amazon(url):
         -True if the URL is invalid or False if it is valud.
     """
     # Define a regular expression pattern for Amazon URLs:
-    amazon_pattern = re.search("""^(https://|www.)|amazon\.(com|in|co\.uk|fr|com\.mx|com\.br|com\.au|co\.jp|se|de|it|com\.be)(/s\?.|/b/.)+""", url)
+    amazon_pattern = re.search("""^(https://|www.)|amazon\.(com|in|co\.uk|fr|com\.mx|com\.br|com\.au|co\.jp|se|de|it|ae|com\.be)(/s\?.|/b/.)+""", url)
 
     # Check if the pattern is not found in the URL:
     if amazon_pattern == None:
@@ -203,6 +203,7 @@ def region(url):
         'se': 'Sweden',
         'de': 'Germany',
         'it': 'Italy',
+        'ae': 'UAE',
     }
 
     # Return the country associated with the raw domain:
