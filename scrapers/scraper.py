@@ -115,7 +115,7 @@ class Amazon:
         Returns:
             -list: A list of URLs, with each URL pointing to a different page of search results.
         """
-        # Create a list to store the split URLs, and add the orignal URL to it:
+        # Create a list to store the split URLs, and add the original URL to it:
         split_url = [self.base_url]
 
         # Use the 'num_of_pages' method to get the total number of search result pages for the given URL:
@@ -126,11 +126,11 @@ class Amazon:
         # Making a soup:
         soup = BeautifulSoup(content, 'lxml')
 
-        # Get the URL of the next button on the search result page and costruct the URL of the next search result page:
+        # Get the URL of the next button on the search result page and construct the URL of the next search result page:
         next_link = f"""https://www.amazon.{self.country_domain}{await self.catch.attributes(soup.select_one(self.scrape['next_button']), 'href')}"""
 
         for num in range(1, total_pages):
-            # Replace the 'page' number in the URL with curren tpage number increment by 1:
+            # Replace the 'page' number in the URL with current page number increment by 1:
             next_url = re.sub(r'page=\d+', f'page={num+1}' , next_link)
 
             # Replace the 'sr_pg_' parameter in the URL with current page number:
@@ -166,7 +166,7 @@ class Amazon:
         Retrieves the category name of search results on the given Amazon search page URL.
 
         Args:
-            -url (str): The Amazon search page URL to retrive category name.
+            -url (str): The Amazon search page URL to retrieve category name.
 
         Raises:
             -None.
@@ -202,7 +202,7 @@ class Amazon:
         url_lists = []
         for retry in range(max_retries):
             try:
-                # Use the 'static_connection' method to download the HTML content of the search results bage
+                # Use the 'static_connection' method to download the HTML content of the search results page
                 content = await Response(url, self.proxy).content()
                 soup = BeautifulSoup(content, 'lxml')
 
@@ -246,7 +246,6 @@ class Amazon:
             try:
                 # Retrieve the page content using 'static_connection' method:
                 content = await Response(url, self.proxy).content()
-                # print(content)
 
                 # Adding a random time interval between each requests
                 random_time_interval = await randomTime(self.rand_time)
@@ -299,7 +298,7 @@ class Amazon:
                 store_link = f"""https://www.amazon.{self.country_domain}{await self.catch.attributes(soup.select_one(self.scrape['store']), 'href')}"""
 
                 # Construct the data dictionary containing product information:
-                datas = {
+                data = {
                     'Name': product,
                     'ASIN': await self.getASIN(url),
                     'Region': self.region,
@@ -317,14 +316,14 @@ class Amazon:
                     'Store': store.replace("Visit the ", ""),
                     'Store link': store_link,
                 }
-                amazon_dicts.append(datas)
+                amazon_dicts.append(data)
                 break
             except Exception as e:
                 print(f"Retry {retry + 1} || Error: {str(e)}\nURL: {url}")
                 if retry < max_retries - 1:
                     await asyncio.sleep(5)
                 else:
-                    raise Exception(f"Failed to retrieve valid data after {max_retries} retries. Scraped datas are saved and exported.")
+                    raise Exception(f"Failed to retrieve valid data after {max_retries} retries. Scraped data are saved and exported.")
         return amazon_dicts
 
 
@@ -396,4 +395,24 @@ class Amazon:
 
         # Export the concatenated DataFrame to a CSV file:
         await export_sheet(final_results, categ_name)
+
+
+    async def bypass_captcha_and_get_elements(self, content:str=None, file_name:str=None):
+        """
+        Solves the Amazon CAPTCHA and retrieves the elements of the Amazon search/product page.
+        
+        Args:
+            content: CSS selector or screenshot path.
+                    - '*.png': Path to the screenshot of the Amazon page
+                    - 'html': Get the OuterHTML content by executing javascript code
+                    - 'page_source': Return the entire HTML of the page using `get_page_source()` method
+                    - else: Extract the contents using CSS selector
+        """
+        html_data = await Response(self.base_url, self.proxy).solve_captcha(content)
+        if content and not content.endswith("png"):
+            if not file_name:
+                file_name = 'amazon_data.txt'
+            with open(file_name, 'w') as file:
+                file.write(html_data)
+            print("The HTML content of the Amazon search results page has been successfully saved to a text file.")
 

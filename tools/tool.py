@@ -13,9 +13,11 @@ from arsenic.session import *
 from arsenic.errors import ArsenicError
 from dotenv import load_dotenv, find_dotenv
 from http import HTTPStatus
+from PIL import Image
+
 
 class Response:
-    def __init__(self, base_url, proxy, enable_captcha_solver=True):
+    def __init__(self, base_url, proxy):
         """
         Initializes the Response class with a base URL.
 
@@ -24,19 +26,19 @@ class Response:
         """
         self.base_url = base_url
         self.proxy = proxy
-        self.enable_captcha_solver = enable_captcha_solver
 
-    async def __solve_captcha(self, get_content=True):
+
+    async def solve_captcha(self, content: str = None):
         """
         Asynchronously solves CAPTCHA if present on the page.
+        :param content (CSS selector): The content to retrieve from the page via CSS selector. If None, a screenshot is saved.
         """
         _ = load_dotenv(find_dotenv())
         service = services.Chromedriver(binary=os.environ.get('CHROMEDRIVER_PATH'))
         browser = browsers.Chrome()
-
-        try:
-            # Start an Arsenic session
-            async with get_session(service, browser) as session:
+        # Start an Arsenic session
+        async with get_session(service, browser) as session:
+            try:
                 await session.get(self.base_url)
 
                 # Locate the captcha image and retrieve the src attribute
@@ -54,17 +56,31 @@ class Response:
                 # Locate and click the 'Continue shopping' button
                 continue_shopping_btn = await session.wait_for_element(2, 'button.a-button-text')
                 await continue_shopping_btn.click()
-                # debugging: await bytesIO_data = session.get_screenshot()
 
-                if get_content:
+                if not content or content.endswith('.png'):
+                    # save screenshot for debugging purposes
+                    bytesIO_data = await session.get_screenshot()
+                    image = Image.open(bytesIO_data)
+                    image.save('captcha_solved.png' if not content else content)
+                    # return status code for success
+                    return HTTPStatus.OK  
+                if content == 'html':
                     html_data = await session.execute_async_script("return document.documentElement.outerHTML;")
-                    return html_data
+                elif content == 'page_source':
+                    html_data = await session.get_page_source()
                 else:
-                    return HTTPStatus.OK  # status code for success
-
-        except ArsenicError as e:
-            print(f"An error occurred: {e}")
-            self.enable_captcha_solver = False
+                    # get a list of child elements matching the CSS selector
+                    html_data = await session.get_elements(content)
+                return html_data
+                    
+            except ArsenicError as e:
+                print(f"Captcha failed to be solved: {e}\n Please use other methods to scrape the contents you want...")
+                # save screenshot for debugging purposes
+                bytesIO_data = await session.get_screenshot()
+                image = Image.open(bytesIO_data)
+                image.save('captcha_solved.png' if not content else content)
+                # return status code for failure
+                return HTTPStatus.BAD_REQUEST
 
 
 
@@ -75,15 +91,14 @@ class Response:
         Returns:
         - bytes: The content of the HTTP response.
         """
-        if self.enable_captcha_solver:
-            content = await self.__solve_captcha(get_content=True)
-            return content
-        else:
-            async with aiohttp.ClientSession() as session:
-                headers = {'User-Agent': userAgents()}
-                async with session.get(self.base_url, headers = headers) as resp:
-                    cont = await resp.read()
-                    return cont
+        async with aiohttp.ClientSession() as session:
+            headers = { 'User-Agent': ( 'Mozilla/5.0 (X11; Linux x86_64)' 
+                                        'AppleWebKit/537.36 (KHTML, like Gecko)'
+                                        'Chrome/44.0.2403.157 Safari/537.36' ),
+                        'Accept-Language': 'en-US, en;q=0.5'}
+            async with session.get(self.base_url, headers = headers) as resp:
+                cont = await resp.read()
+                return cont
 
 
     async def response(self):
@@ -93,20 +108,16 @@ class Response:
         Returns:
         - int: The HTTP status code of the response.
         """
-        if self.enable_captcha_solver:
-            status = await self.__solve_captcha(get_content=False)
-            return status
-        else:
-            async with aiohttp.ClientSession() as session:
-                headers = {'User-Agent': userAgents()}
-                async with session.get(self.base_url, headers = headers) as resp:
-                    cont = resp.status
-                    return cont
+        async with aiohttp.ClientSession() as session:
+            headers = {'User-Agent': userAgents()}
+            async with session.get(self.base_url, headers = headers) as resp:
+                cont = resp.status
+                return cont
 
 
 class TryExcept:
     """
-    A class containing methord for seafely extracting information from HTML elements.
+    A class containing method for safely extracting information from HTML elements.
     """
     async def text(self, element):
         """
@@ -116,7 +127,7 @@ class TryExcept:
             -element: An HTML element object.
 
         Returns:
-            -A string representing the text content of the elemen, or "N/A" if the element is not found.
+            -A string representing the text content of the element, or "N/A" if the element is not found.
         """
         try:
             elements = element.text.strip()
@@ -198,7 +209,7 @@ def domain(url):
 
 def flat(d_lists):
     """
-    Flatten a multi-dimentional list.
+    Flatten a multi-dimensional list.
 
     Args:
     - d_lists (list): A multi-dimensional list.
@@ -212,13 +223,13 @@ def flat(d_lists):
 
 async def verify_amazon(url):
     """
-    Verifies if the input URL is a vaild Amazon URL.
+    Verifies if the input URL is a valid Amazon URL.
 
     Args:
         -url: A string representing the URL to verify.
 
     Returns:
-        -True if the URL is invalid or False if it is valud.
+        -True if the URL is invalid or False if it is valid.
     """
     # Define a regular expression pattern for Amazon URLs:
     amazon_pattern = re.search("""^(https://|www.)|amazon\.(com|in|co\.uk|fr|com\.mx|com\.br|com\.au|co\.jp|se|ca|de|it|ae|com\.be)(/s\?.|/b/.)+""", url)
@@ -287,7 +298,7 @@ async def create_path(dir_name):
     Creates a directory with the specified name if i doesn't already exist.
 
     Args:
-        -dir_name: A string representing the name of the direcory to create.
+        -dir_name: A string representing the name of the directory to create.
 
     Return:
         -None
@@ -306,7 +317,7 @@ async def create_path(dir_name):
 
 async def export_sheet(dicts, name):
     """
-    Exports a list of dictinaries to an Excel file with the specified name and saves it to a directory called 'Amazon database':
+    Exports a list of dictionaries to an Excel file with the specified name and saves it to a directory called 'Amazon database':
 
     Args:
         -dicts (List[Dict]): A list of dictionaries to export to an Excel file.
@@ -333,13 +344,13 @@ async def export_sheet(dicts, name):
 
 async def randomTime(val):
     """
-    Generates a random time interval between requests to avaoid overloading the server. Scrape resonponsibly.
+    Generates a random time interval between requests to avoid overloading the server. Scrape responsibly.
 
     Args:
-        -val: An interger representing the maxinum time interval in seconds.
+        -val: An integer representing the maximum time interval in seconds.
 
     Returns:
-        -A random interger between 2 and the input value. So, the default time interval is 2 seconds.
+        -A random integer between 2 and the input value. So, the default time interval is 2 seconds.
     """
     # Create a list of integers from 0 to the specified maximum value:
     ranges = [i for i in range(0, val+1)]
@@ -356,7 +367,7 @@ def userAgents():
         -None
 
     Returns:
-        -A string representing a ranom user agent.
+        -A string representing a random user agent.
     """
     agents = UserAgent()
     return agents.random
