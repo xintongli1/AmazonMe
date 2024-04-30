@@ -65,7 +65,7 @@ class Amazon:
         Returns:
             - int: The HTTP response status code.
         """
-        response = await Response(self.base_url).response()
+        response = await Response(self.base_url, self.proxy).response()
         return response
 
 
@@ -81,7 +81,7 @@ class Amazon:
         """
         for retry in range(max_retries):
             try:
-                content = await Response(self.base_url).content()
+                content = await Response(self.base_url, self.proxy).content()
                 soup = BeautifulSoup(content, 'lxml')
 
                 # Try except clause for index error, this happens if there are only one page:
@@ -122,7 +122,7 @@ class Amazon:
         total_pages = await self.num_of_pages()
 
         # Use the 'static_connection' method to make a static connection to the given URL and get its HTML content:
-        content = await Response(self.base_url).content()
+        content = await Response(self.base_url, self.proxy).content()
         # Making a soup:
         soup = BeautifulSoup(content, 'lxml')
 
@@ -161,7 +161,7 @@ class Amazon:
 
 
     async def category_name(self):
-        resp = Response(self.base_url)
+        resp = Response(self.base_url, self.proxy)
         """
         Retrieves the category name of search results on the given Amazon search page URL.
 
@@ -187,7 +187,7 @@ class Amazon:
         return searches_results
 
 
-    async def product_urls(self, url, max_retries = 13):
+    async def product_urls(self, url=None, max_retries = 13):
         """
         Scrapes product data from the Amazon search results page for the given URL.
 
@@ -195,13 +195,15 @@ class Amazon:
             -list: A list of dictionaries, with each dictionary containing product data for single product.
 
         Raises:
-            -Expecation: If there is an error while loading the content of the Amazon search results page.
+            -Expectation: If there is an error while loading the content of the Amazon search results page.
         """
+        if not url:
+            url = self.base_url
         url_lists = []
         for retry in range(max_retries):
             try:
                 # Use the 'static_connection' method to download the HTML content of the search results bage
-                content = await Response(url).content()
+                content = await Response(url, self.proxy).content()
                 soup = BeautifulSoup(content, 'lxml')
 
                 # Check if main content element exists on page:
@@ -222,7 +224,7 @@ class Amazon:
         return flat(url_lists)
 
 
-    async def scrape_product_info(self, url, max_retries = 13):
+    async def scrape_product_info(self, url=None, max_retries = 13):
         """
         Scrapes product information from the Amazon product page.
 
@@ -236,12 +238,15 @@ class Amazon:
         Raises:
             - Exception: If valid data cannot be retrieved after the maximum number of retry attempts.
         """
+        if not url:
+            url = self.base_url
         # List to store product information dictionaries:
         amazon_dicts = []
         for retry in range(max_retries):
             try:
                 # Retrieve the page content using 'static_connection' method:
-                content = await Response(url).content()
+                content = await Response(url, self.proxy).content()
+                # print(content)
 
                 # Adding a random time interval between each requests
                 random_time_interval = await randomTime(self.rand_time)

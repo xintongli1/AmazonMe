@@ -7,10 +7,15 @@ import secrets
 import yaml
 import re
 import os
-
+from amazoncaptcha import AmazonCaptcha
+from arsenic import get_session, browsers, services
+from arsenic.session import *
+from arsenic.errors import ArsenicError
+from dotenv import load_dotenv, find_dotenv
+from http import HTTPStatus
 
 class Response:
-    def __init__(self, base_url):
+    def __init__(self, base_url, proxy, enable_captcha_solver=True):
         """
         Initializes the Response class with a base URL.
 
@@ -18,6 +23,50 @@ class Response:
         - base_url (str): The base URL for the HTTP requests.
         """
         self.base_url = base_url
+        self.proxy = proxy
+        self.enable_captcha_solver = enable_captcha_solver
+
+    async def __solve_captcha(self, get_content=True):
+        """
+        Asynchronously solves CAPTCHA if present on the page.
+        """
+        _ = load_dotenv(find_dotenv())
+        service = services.Chromedriver(binary=os.environ.get('CHROMEDRIVER_PATH'))
+        browser = browsers.Chrome()
+
+        try:
+            # Start an Arsenic session
+            async with get_session(service, browser) as session:
+                await session.get(self.base_url)
+
+                # Locate the captcha image and retrieve the src attribute
+                captcha_img = await session.get_element('div.a-row.a-text-center img') # CSS selector
+                captcha_url = await captcha_img.get_attribute('src')
+
+                # Assuming AmazonCaptcha is a synchronous function
+                captcha = AmazonCaptcha.fromlink(captcha_url)
+                captcha_value = AmazonCaptcha.solve(captcha)
+
+                # Input the captcha solution
+                input_field = await session.get_element('#captchacharacters')
+                await input_field.send_keys(captcha_value)
+
+                # Locate and click the 'Continue shopping' button
+                continue_shopping_btn = await session.wait_for_element(2, 'button.a-button-text')
+                await continue_shopping_btn.click()
+                # debugging: await bytesIO_data = session.get_screenshot()
+
+                if get_content:
+                    html_data = await session.execute_async_script("return document.documentElement.outerHTML;")
+                    return html_data
+                else:
+                    return HTTPStatus.OK  # status code for success
+
+        except ArsenicError as e:
+            print(f"An error occurred: {e}")
+            self.enable_captcha_solver = False
+
+
 
     async def content(self):
         """
@@ -26,11 +75,16 @@ class Response:
         Returns:
         - bytes: The content of the HTTP response.
         """
-        async with aiohttp.ClientSession() as session:
-            headers = {'User-Agent': userAgents()}
-            async with session.get(self.base_url, headers = headers) as resp:
-                cont = await resp.read()
-                return cont
+        if self.enable_captcha_solver:
+            content = await self.__solve_captcha(get_content=True)
+            return content
+        else:
+            async with aiohttp.ClientSession() as session:
+                headers = {'User-Agent': userAgents()}
+                async with session.get(self.base_url, headers = headers) as resp:
+                    cont = await resp.read()
+                    return cont
+
 
     async def response(self):
         """
@@ -39,11 +93,15 @@ class Response:
         Returns:
         - int: The HTTP status code of the response.
         """
-        async with aiohttp.ClientSession() as session:
-            headers = {'User-Agent': userAgents()}
-            async with session.get(self.base_url, headers = headers) as resp:
-                cont = resp.status
-                return cont
+        if self.enable_captcha_solver:
+            status = await self.__solve_captcha(get_content=False)
+            return status
+        else:
+            async with aiohttp.ClientSession() as session:
+                headers = {'User-Agent': userAgents()}
+                async with session.get(self.base_url, headers = headers) as resp:
+                    cont = resp.status
+                    return cont
 
 
 class TryExcept:
@@ -163,7 +221,7 @@ async def verify_amazon(url):
         -True if the URL is invalid or False if it is valud.
     """
     # Define a regular expression pattern for Amazon URLs:
-    amazon_pattern = re.search("""^(https://|www.)|amazon\.(com|in|co\.uk|fr|com\.mx|com\.br|com\.au|co\.jp|se|de|it|ae|com\.be)(/s\?.|/b/.)+""", url)
+    amazon_pattern = re.search("""^(https://|www.)|amazon\.(com|in|co\.uk|fr|com\.mx|com\.br|com\.au|co\.jp|se|ca|de|it|ae|com\.be)(/s\?.|/b/.)+""", url)
 
     # Check if the pattern is not found in the URL:
     if amazon_pattern == None:
@@ -192,6 +250,7 @@ def region(url):
     # Define a dictionary mapping raw domains to countries:
     domain_lists = {
         'com': 'USA',
+        'ca': 'Canada',
         'uk': 'UK',
         'mx': 'Mexico',
         'br': 'Brazil',
